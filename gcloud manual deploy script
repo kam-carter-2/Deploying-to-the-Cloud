@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# deploy_cloudrun.sh
+# Usage: ./deploy_cloudrun.sh YOUR_PROJECT_ID
+set -e
+
+PROJECT_ID=$1
+if [ -z "$PROJECT_ID" ]; then
+  echo "Usage: ./deploy_cloudrun.sh YOUR_PROJECT_ID"
+  exit 1
+fi
+
+# Build & push backend
+echo "Building & pushing backend..."
+docker build -t gcr.io/${PROJECT_ID}/recipe-backend ./backend
+docker push gcr.io/${PROJECT_ID}/recipe-backend
+
+echo "Deploying backend to Cloud Run..."
+gcloud run deploy recipe-backend \
+  --image gcr.io/${PROJECT_ID}/recipe-backend \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 5000
+
+# get backend url
+BACKEND_URL=$(gcloud run services describe recipe-backend --platform managed --region us-central1 --format='value(status.url)')
+echo "Backend deployed at: ${BACKEND_URL}"
+
+# Build & push frontend (include VITE_API_URL arg)
+echo "Building & pushing frontend (with VITE_API_URL=${BACKEND_URL})..."
+docker build --build-arg VITE_API_URL=${BACKEND_URL} -t gcr.io/${PROJECT_ID}/recipe-frontend ./frontend
+docker push gcr.io/${PROJECT_ID}/recipe-frontend
+
+echo "Deploying frontend to Cloud Run..."
+gcloud run deploy recipe-frontend \
+  --image gcr.io/${PROJECT_ID}/recipe-frontend \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 80
+
+FRONTEND_URL=$(gcloud run services describe recipe-frontend --platform managed --region us-central1 --format='value(status.url)')
+echo "Frontend deployed at: ${FRONTEND_URL}"
+
+echo "Done. Frontend: ${FRONTEND_URL} | Backend: ${BACKEND_URL}"
